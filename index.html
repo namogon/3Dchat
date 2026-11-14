@@ -7,10 +7,45 @@
 <style>
   html,body{margin:0;height:100%;background:#1b1830;overflow:hidden}
   iframe{border:0;width:100%;height:100%;display:block}
+  #hint{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(20,16,36,.92);color:#fff;font:14px sans-serif;padding:10px 16px;border-radius:12px;display:none;z-index:9}
 </style>
 </head>
 <body>
-<!-- ↓ src="…" の中を、GAS の「ウェブアプリ」の URL（…/exec で終わるもの）に置き換えてください -->
-<iframe src="https://script.google.com/macros/s/AKfycbzR45XOTyTacUnT4Xxp2WAsgiMZzyxTB2XWQbGNkf5ku4C6ajQzlGD7ZGLzrvWkDTor/exec" allow="autoplay; clipboard-write; fullscreen"></iframe>
+<!-- ↓ src="…" の中は、GAS の「ウェブアプリ」の URL（…/exec で終わるもの） -->
+<iframe id="app" src="https://script.google.com/macros/s/AKfycbzR45XOTyTacUnT4Xxp2WAsgiMZzyxTB2XWQbGNkf5ku4C6ajQzlGD7ZGLzrvWkDTor/exec" allow="autoplay; clipboard-read; clipboard-write; fullscreen"></iframe>
+<div id="hint">もう一度「戻る」を押すと終了します</div>
+<script>
+/* スマホの「戻る」でページが閉じないようにする。
+ * 戻るを押すと、チャットの中で開いている画面（小窓・掲示板など）を閉じる。
+ * 何も開いていなければ「もう一度押すと終了」と出して、2秒以内にもう一度押すと終了。 */
+(function(){
+  var app = document.getElementById('app'), hint = document.getElementById('hint');
+  var trapped = false, armT = 0, seq = 0, wait = {};
+  // GAS の画面は iframe の中のさらに奥にあるので、全部の枠に送る
+  function post(w, msg){ try { w.postMessage(msg, '*'); } catch (e) {} try { for (var i = 0; i < w.frames.length; i++) post(w.frames[i], msg); } catch (e) {} }
+  function send(msg){ if (app.contentWindow) post(app.contentWindow, msg); }
+  function trap(){ if (trapped) return; try { history.pushState({ chatTrap: 1 }, '', location.href); trapped = true; } catch (e) {} }
+  function showHint(){ hint.style.display = 'block'; clearTimeout(showHint.t); showHint.t = setTimeout(function(){ hint.style.display = 'none'; }, 2000); }
+  // ブラウザは「ユーザーが操作したあと」に足した履歴でないと戻るで止まらないので、操作を待ってから足す
+  var chk = setInterval(function(){
+    var ua = navigator.userActivation;
+    if (!ua || ua.hasBeenActive) { trap(); if (trapped) clearInterval(chk); }
+  }, 500);
+  window.addEventListener('pointerdown', trap, true);
+  app.addEventListener('load', function(){ setTimeout(function(){ send({ app: '3dchat', type: 'embedded' }); }, 1500); setTimeout(function(){ send({ app: '3dchat', type: 'embedded' }); }, 5000); });
+  window.addEventListener('message', function(e){
+    var d = e.data; if (!d || d.app !== '3dchat' || d.type !== 'backResult') return;
+    var w = wait[d.id]; if (!w) return; delete wait[d.id]; clearTimeout(w.t);
+    if (!d.handled) { armT = Date.now(); }   // 何も閉じなかった → 中で「もう一度押すと終了」を出している
+  });
+  window.addEventListener('popstate', function(){
+    if (Date.now() - armT < 2000) { history.back(); return; }   // 2回目 → 本当に戻る（終了）
+    trapped = false; trap();
+    var id = ++seq;
+    wait[id] = { t: setTimeout(function(){ delete wait[id]; armT = Date.now(); showHint(); }, 600) };   // 返事がない（読み込み中など）
+    send({ app: '3dchat', type: 'back', id: id, hint: true });
+  });
+})();
+</script>
 </body>
 </html>
